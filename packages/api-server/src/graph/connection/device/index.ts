@@ -13,6 +13,10 @@ import rc from "./rc";
 import sensors from "./sensors";
 import status from "./status";
 import serial from "./serial";
+import alignment from "./alignment";
+import pid from "./pid";
+import motors from "./motors";
+import beepers from "./beeper";
 
 const typeDefs = gql`
   extend type Connection {
@@ -44,6 +48,7 @@ export default {
   typeDefs: mergeTypes([
     typeDefs,
     arming.typeDefs,
+    alignment.typeDefs,
     attitude.typeDefs,
     features.typeDefs,
     gps.typeDefs,
@@ -54,11 +59,15 @@ export default {
     sensors.typeDefs,
     status.typeDefs,
     serial.typeDefs,
+    pid.typeDefs,
+    motors.typeDefs,
+    beepers.typeDefs,
   ]),
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   resolvers: mergeResolvers<unknown, any>([
     resolvers,
     arming.resolvers,
+    alignment.resolvers,
     attitude.resolvers,
     features.resolvers,
     gps.resolvers,
@@ -69,5 +78,8 @@ export default {
     sensors.resolvers,
     status.resolvers,
     serial.resolvers,
+    pid.resolvers,
+    motors.resolvers,
+    beepers.resolvers,
   ]),
 };

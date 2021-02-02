@@ -1,9 +1,18 @@
+/* eslint-disable import/export */
+/* eslint-disable @typescript-eslint/explicit-function-return-type */
 /**
  * Hacky mock data generator to be able to test this API without
  * a device
  */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { Sensors, DisarmFlags, SerialPortFunctions } from "@betaflight/api";
+import {
+  Sensors,
+  DisarmFlags,
+  SerialPortFunctions,
+  Axes3D,
+  Beepers,
+  BeeperConfig,
+} from "@betaflight/api";
 import { v4 } from "uuid";
 
 export * from "@betaflight/api";
@@ -19,10 +28,7 @@ const mockPorts = [
   autoClosePort,
 ];
 
-const ids = mockPorts.reduce(
-  (acc, port) => ({ ...acc, [port]: v4() }),
-  {} as Record<string, string>
-);
+const ids = Object.fromEntries(mockPorts.map((port) => [port, v4()]));
 
 const badBaudrate = 38400;
 
@@ -30,7 +36,12 @@ const mockDevice = {
   attitude: {
     roll: 0,
     pitch: 0,
-    heading: 0,
+    yaw: 0,
+  },
+  alignment: {
+    roll: 0,
+    pitch: 0,
+    yaw: 0,
   },
   gps: {
     fix: false,
@@ -73,13 +84,89 @@ const mockDevice = {
       blackboxBaudRate: 115200,
     })),
   },
+  advancedPidConfig: {
+    gyroSyncDenom: 3,
+    pidProcessDenom: 2,
+    useUnsyncedPwm: false,
+    fastPwmProtocol: 1,
+    gyroToUse: 0,
+    motorPwmRate: 480,
+    digitalIdlePercent: 4.5,
+    gyroUse32kHz: false,
+    motorPwmInversion: 0,
+    gyroHighFsr: 0,
+    gyroMovementCalibThreshold: 0,
+    gyroCalibDuration: 0,
+    gyroOffsetYaw: 0,
+    gyroCheckOverflow: 0,
+    debugMode: 0,
+    debugModeCount: 0,
+  },
+  boardInfo: {
+    boardIdentifier: "S411",
+    boardName: "CRAZYBEEF4FS",
+    boardType: 2,
+    boardVersion: 0,
+    configurationState: 2,
+    manufacturerId: "HAMO",
+    mcuTypeId: 4,
+    sampleRateHz: undefined,
+    signature: [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+    ],
+    targetCapabilities: 55,
+    targetName: "STM32F411",
+  },
+  mixerConfig: {
+    mixer: 3,
+    reversedMotors: false,
+  },
+  beeper: {
+    conditions: [],
+    dshot: {
+      tone: 0,
+      conditions: [Beepers.RX_LOST] as (Beepers.RX_LOST | Beepers.RX_SET)[],
+    },
+  },
+  disabledSensors: [Sensors.MAGNETOMETER],
 };
 
 const tickAttitude = (): void => {
   const newValue = (mockDevice.attitude.roll + 1) % 360;
   mockDevice.attitude.roll = newValue;
   mockDevice.attitude.pitch = newValue;
-  mockDevice.attitude.heading = newValue;
+  mockDevice.attitude.yaw = newValue;
 };
 
 const tickGps = (): void => {
@@ -184,7 +271,74 @@ export const readSerialConfig = (): Promise<typeof mockDevice["serial"]> =>
   delay(50).then(() => mockDevice.serial);
 
 export const readUID = (port: string): Promise<string> =>
-  delay(30).then(() => ids[port]);
+  delay(30).then(() => {
+    const id = ids[port];
+    if (id) {
+      return id;
+    }
+    throw new Error("Port does not exist");
+  });
 
 export const writeReboot = (port: string): Promise<boolean> =>
   delay(100).then(() => true);
+
+export const readBoardAlignmentConfig = (port: string): Promise<Axes3D> =>
+  delay(20).then(() => mockDevice.alignment);
+
+export const writeBoardAlignmentConfig = (
+  port: string,
+  alignment: Axes3D
+): Promise<void> =>
+  delay(20).then(() => {
+    mockDevice.alignment = alignment;
+  });
+
+export const readAdvancedPidConfig = (port: string) =>
+  delay(30).then(() => mockDevice.advancedPidConfig);
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const writePidProtocols = (port: string, protocols: any) =>
+  delay(20).then(() => {
+    mockDevice.advancedPidConfig = {
+      ...mockDevice.advancedPidConfig,
+      ...protocols,
+    };
+  });
+
+export const readBoardInfo = (port: string) =>
+  delay(10).then(() => mockDevice.boardInfo);
+
+export const readMixerConfig = (port: string) =>
+  delay(15).then(() => mockDevice.mixerConfig);
+
+export const writeMotorDirection = (port: string, reversed: boolean) =>
+  delay(50).then(() => {
+    mockDevice.mixerConfig.reversedMotors = reversed;
+  });
+
+export const writeDigitalIdleSpeed = (port: string, idlePercentage: number) =>
+  delay(10).then(() => {
+    mockDevice.advancedPidConfig.digitalIdlePercent = idlePercentage;
+  });
+
+export const readBeeperConfig = (port: string) =>
+  delay(20).then(() => mockDevice.beeper);
+
+export const writeDshotBeeperConfig = (
+  port: string,
+  config: BeeperConfig["dshot"]
+) =>
+  delay(50).then(() => {
+    mockDevice.beeper.dshot = config;
+  });
+
+export const readDisabledSensors = (port: string) =>
+  delay(15).then(() => mockDevice.disabledSensors);
+
+export const writeDisabledSensors = (
+  port: string,
+  disabledSensors: Sensors[]
+) =>
+  delay(20).then(() => {
+    mockDevice.disabledSensors = disabledSensors;
+  });

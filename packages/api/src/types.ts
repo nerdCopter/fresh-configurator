@@ -1,3 +1,7 @@
+export type PartialNullable<T> = {
+  [P in keyof T]?: T[P] | null;
+};
+
 export type VoltageMeters = {
   id: number;
   voltage: number;
@@ -29,7 +33,7 @@ export type BoardInfo = {
   boardName: string;
   manufacturerId: string;
   signature: number[];
-  mcuTypeId: number;
+  mcuTypeId: McuTypes;
   configurationState: number | undefined;
   sampleRateHz: number | undefined;
 };
@@ -42,10 +46,10 @@ export type ImuData = {
   magnetometer: ImuUnit;
 };
 
-export type Kinematics = {
+export type Axes3D = {
   roll: number;
   pitch: number;
-  heading: number;
+  yaw: number;
 };
 
 export type Status = {
@@ -61,6 +65,93 @@ export type ExtendedStatus = Status & {
   numProfiles: number;
   rateProfile: number;
   armingDisabledFlags: DisarmFlags[];
+};
+
+export enum FilterTypes {
+  PT1 = 0,
+  BIQUAD = 1,
+}
+
+export type LowpassFilter = {
+  hz: number;
+  type: FilterTypes;
+};
+
+export type NotchFilter = {
+  hz: number;
+  cutoff: number;
+};
+
+export type FilterConfig = {
+  gryo: {
+    hardwareLPF: number;
+    hardware32KhzLPF: number;
+    rpmNotchHarmonics: number;
+    rpmNotchMinHz: number;
+    lowpass: LowpassFilter & {
+      dynMinHz: number;
+      dynMaxHz: number;
+    };
+    lowpass2: LowpassFilter;
+    notch: NotchFilter;
+    notch2: NotchFilter;
+  };
+  derm: {
+    lowpass: LowpassFilter & {
+      dynMinHz: number;
+      dynMaxHz: number;
+    };
+    lowpass2: LowpassFilter;
+    notch: NotchFilter & {
+      range: number;
+      widthPercent: number;
+      q: number;
+      minHz: number;
+      maxHz: number;
+    };
+  };
+  yaw: {
+    lowpass: {
+      hz: number;
+    };
+  };
+  dynLpfCurveExpo: 0;
+};
+
+export enum EscProtocols {
+  PWM = 0,
+  ONESHOT125 = 1,
+  ONESHOT42 = 2,
+  MULTISHOT = 3,
+  BRUSHED = 4,
+  DSHOT150 = 5,
+  DSHOT300 = 6,
+  DSHOT600 = 7,
+  DSHOT1200 = 8,
+  PROSHOT1000 = 9,
+  DISABLED = 10,
+}
+
+export type PidProtocols = {
+  gyroSyncDenom: number;
+  pidProcessDenom: number;
+  useUnsyncedPwm: boolean;
+  fastPwmProtocol: EscProtocols;
+  gyroUse32kHz: boolean;
+  motorPwmRate: number;
+};
+
+export type AdvancedPidConfig = PidProtocols & {
+  gyroToUse: number;
+  digitalIdlePercent: number;
+  motorPwmInversion: number;
+  gyroHighFsr: number;
+  gyroMovementCalibThreshold: number;
+  gyroCalibDuration: number;
+  gyroOffsetYaw: number;
+  gyroCheckOverflow: number;
+  debugMode: number;
+  debugModeCount: number;
 };
 
 export type RCTuning = {
@@ -219,3 +310,63 @@ export enum RebootTypes {
   MSC = 2,
   MSC_UTC = 3,
 }
+
+export enum McuTypes {
+  SIMULATOR = 0,
+  F103,
+  F303,
+  F40X,
+  F411,
+  F446,
+  F722,
+  F745,
+  F746,
+  F765,
+  H750,
+  H743_REV_UNKNOWN,
+  H743_REV_Y,
+  H743_REV_X,
+  H743_REV_V,
+  H7A3,
+  H723_725,
+  UNKNOWN = 255,
+}
+
+export type MixerConfig = {
+  mixer: number;
+  reversedMotors: boolean;
+};
+
+export enum Beepers {
+  GYRO_CALIBRATED,
+  RX_LOST,
+  RX_LOST_LANDING,
+  DISARMING,
+  ARMING,
+  ARMING_GPS_FIX,
+  BAT_CRIT_LOW,
+  BAT_LOW,
+  GPS_STATUS,
+  RX_SET,
+  ACC_CALIBRATION,
+  ACC_CALIBRATION_FAIL,
+  READY_BEEP,
+  MULTI_BEEPS,
+  DISARM_REPEAT,
+  ARMED,
+  SYSTEM_INIT,
+  USB,
+  BLACKBOX_ERASE,
+  CRASH_FLIP,
+  CAM_CONNECTION_OPEN,
+  CAM_CONNECTION_CLOSE,
+  RC_SMOOTHING_INIT_FAIL,
+}
+
+export type BeeperConfig = {
+  conditions: Beepers[];
+  dshot: {
+    conditions: (Beepers.RX_LOST | Beepers.RX_SET)[];
+    tone: number;
+  };
+};

@@ -26,17 +26,13 @@ const CHANNEL_COLORS = [
 const CHANNEL_NAMES = ["Roll [A]", "Pitch [E]", "Yaw [R]", "Throttle [T]"];
 
 export type ChannelsListProps = {
-  channels: number[];
+  channels: readonly number[];
   disabled?: boolean;
 };
 
 const ChannelsList: React.FC<ChannelsListProps> = ({ channels, disabled }) => {
-  const getChannelName = (number: number): string => {
-    if (number >= CHANNEL_NAMES.length) {
-      return `AUX ${number - CHANNEL_NAMES.length + 1}`;
-    }
-    return CHANNEL_NAMES[number];
-  };
+  const getChannelName = (number: number): string =>
+    CHANNEL_NAMES[number] ?? `AUX ${number - CHANNEL_NAMES.length + 1}`;
 
   return (
     <Wrapper>

@@ -1,13 +1,10 @@
-import installExtension, {
-  REACT_DEVELOPER_TOOLS,
-  APOLLO_DEVELOPER_TOOLS,
-  // eslint-disable-next-line import/no-extraneous-dependencies
-} from "electron-devtools-installer";
+import "source-map-support/register";
 // eslint-disable-next-line import/no-extraneous-dependencies
 import { app, BrowserWindow } from "electron";
 import path from "path";
 import url from "url";
 import { createServer } from "@betaflight/api-server";
+import persistedQueries from "./gql/__generated__/persisted-queries-server.json";
 
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
@@ -16,16 +13,18 @@ let mainWindow: BrowserWindow | undefined;
 const E2E = process.env.E2E === "true";
 const PRODUCTION = process.env.NODE_ENV === "production";
 
-let backendPort: number | string = 9000;
+let backendPort: number;
 
 const startBackend = async (): Promise<void> => {
   const mocked = process.env.MOCKED === "true" || E2E;
   if (mocked) {
     console.log("Creating backend in mocked mode");
   }
-  const backend = createServer({ mocked });
+  const backend = createServer({ mocked, persistedQueries });
 
-  const { port } = await backend.listen();
+  const port = await backend.listen({
+    hostname: "127.0.0.1",
+  });
   console.log(`Starting backend on ${port}`);
 
   backendPort = port;
@@ -46,34 +45,44 @@ const createWindow = (): void => {
     show: false,
     webPreferences: {
       nodeIntegration: true,
+      enableRemoteModule: E2E,
     },
   });
 
   const backendAddress = `ws://localhost:${backendPort}`;
+  const searchQuery = `backend=${backendAddress}&electron=true`;
   if (!PRODUCTION) {
+    console.log("loading renderer in development");
     mainWindow.loadURL(
       url.format({
         protocol: "http:",
         host: "localhost:8080",
         pathname: "index.html",
-        search: `backend=${backendAddress}`,
+        search: searchQuery,
         slashes: true,
       })
     );
   } else {
+    console.log("loading renderer");
     mainWindow.loadFile(path.join(__dirname, "index.html"), {
-      search: `backend=${backendAddress}`,
+      search: searchQuery,
     });
   }
 
   // Don't show until we are ready and loaded
-  mainWindow.webContents.once("dom-ready", () => {
+  mainWindow.webContents.once("dom-ready", async () => {
     if (process.env.HEADLESS !== "true") {
       mainWindow?.show();
     }
 
     // Open the DevTools automatically if developing
     if (!PRODUCTION && !E2E) {
+      const {
+        default: installExtension,
+        REACT_DEVELOPER_TOOLS,
+        APOLLO_DEVELOPER_TOOLS,
+        // eslint-disable-next-line import/no-extraneous-dependencies
+      } = await import("electron-devtools-installer");
       installExtension(REACT_DEVELOPER_TOOLS).catch((err) =>
         // eslint-disable-next-line no-console
         console.log("Error loading React DevTools: ", err)

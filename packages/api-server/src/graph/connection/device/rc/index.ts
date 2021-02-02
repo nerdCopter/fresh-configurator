@@ -47,22 +47,13 @@ const resolvers: Resolvers = {
   FlightController: {
     rc: ({ port }) => ({
       port,
-      __typename: "RC",
     }),
   },
 
   RC: {
     channels: ({ port }, _, { api }) => api.readRcValues(port),
-    tuning: ({ port }, _, { api }) =>
-      api.readRCTuning(port).then((values) => ({
-        ...values,
-        __typename: "RCTuning",
-      })),
-    deadband: ({ port }, _, { api }) =>
-      api.readRCDeadband(port).then((values) => ({
-        ...values,
-        __typename: "RCDeadband",
-      })),
+    tuning: ({ port }, _, { api }) => api.readRCTuning(port),
+    deadband: ({ port }, _, { api }) => api.readRCDeadband(port),
     rssi: ({ port }, _, { api }) =>
       api.readAnalogValues(port).then(({ rssi }) => rssi),
   },

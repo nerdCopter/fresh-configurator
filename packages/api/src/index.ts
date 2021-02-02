@@ -1,4 +1,3 @@
-import { times } from "rambda";
 import semver from "semver";
 import {
   MspDataView,
@@ -12,8 +11,7 @@ import codes from "./codes";
 import {
   VoltageMeters,
   ImuData,
-  ImuUnit,
-  Kinematics,
+  Axes3D,
   Status,
   ExtendedStatus,
   RCTuning,
@@ -22,11 +20,17 @@ import {
   RawGpsData,
   BoardInfo,
   DisarmFlags,
-  Sensors,
   Feature,
-  SerialPortFunctions,
   SerialConfig,
   RebootTypes,
+  AdvancedPidConfig,
+  PidProtocols,
+  PartialNullable,
+  EscProtocols,
+  MixerConfig,
+  BeeperConfig,
+  Beepers,
+  Sensors,
 } from "./types";
 import {
   getFeatureBits,
@@ -34,17 +38,13 @@ import {
   sensorBits,
   serialPortFunctionBits,
   legacySerialPortFunctionsMap,
+  beeperBits,
 } from "./features";
+import { times, filterUnset, unpackValues, packValues } from "./utils";
 
 export * from "./osd";
 
-export {
-  Features,
-  DisarmFlags,
-  Sensors,
-  SerialPortFunctions,
-  RebootTypes,
-} from "./types";
+export * from "./types";
 export {
   apiVersion,
   open,
@@ -55,6 +55,12 @@ export {
   packetErrors,
   ports,
 } from "@betaflight/msp";
+export {
+  escProtocols,
+  MCU_GROUPS,
+  mcuGroupFromId,
+  MIXER_LIST,
+} from "./features";
 
 export const readVoltages = async (port: string): Promise<VoltageMeters[]> => {
   const data = await execute(port, { code: codes.MSP_VOLTAGE_METERS });
@@ -139,28 +145,25 @@ export const readIMUData = async (port: string): Promise<ImuData> => {
   const mangetUnit = (): number => data.read16() / 1090;
 
   return {
-    accelerometer: times(accUnit, 3) as ImuUnit,
-    gyroscope: times(gyroUnit, 3) as ImuUnit,
-    magnetometer: times(mangetUnit, 3) as ImuUnit,
+    accelerometer: times(accUnit, 3),
+    gyroscope: times(gyroUnit, 3),
+    magnetometer: times(mangetUnit, 3),
   };
 };
 
-export const readAttitude = async (port: string): Promise<Kinematics> => {
+export const readAttitude = async (port: string): Promise<Axes3D> => {
   const data = await execute(port, { code: codes.MSP_ATTITUDE });
   return {
     roll: data.read16() / 10.0, // x
     pitch: data.read16() / 10.0, // y
-    heading: data.read16(), // z
+    yaw: data.read16(), // z
   };
 };
-
-const activeSensors = (sensorFlags: number): Sensors[] =>
-  sensorBits().filter((_, i) => (sensorFlags >> i) % 2 !== 0);
 
 const extractStatus = (data: MspDataView): Status => ({
   cycleTime: data.readU16(),
   i2cError: data.readU16(),
-  sensors: activeSensors(data.readU16()),
+  sensors: unpackValues(data.readU16(), sensorBits()),
   mode: data.readU32(),
   profile: data.readU8(),
 });
@@ -352,20 +355,6 @@ export const BAUD_RATES = [
   2470000,
 ];
 
-export const unpackSerialPortFunctions = (
-  serialPortsData: number
-): SerialPortFunctions[] =>
-  serialPortFunctionBits().filter((_, i) => (serialPortsData >> i) % 2 !== 0);
-
-export const packSerialPortFunctions = (
-  functions: SerialPortFunctions[]
-): number => {
-  const functionBits = serialPortFunctionBits();
-  return functions
-    .filter((func) => functionBits.includes(func))
-    .reduce((func, acc) => acc | (1 << functionBits.indexOf(func)));
-};
-
 export const toBaudRate = (baudRateIdentifier: number): number =>
   BAUD_RATES[baudRateIdentifier] ?? -1;
 
@@ -383,7 +372,7 @@ export const readSerialConfig = async (port: string): Promise<SerialConfig> => {
         const start = data.remaining();
         const serialPort = {
           id: data.readU8(),
-          functions: unpackSerialPortFunctions(data.readU32()),
+          functions: unpackValues(data.readU32(), serialPortFunctionBits()),
           mspBaudRate: toBaudRate(data.readU8()),
           gpsBaudRate: toBaudRate(data.readU8()),
           telemetryBaudRate: toBaudRate(data.readU8()),
@@ -433,7 +422,7 @@ export const readSerialConfig = async (port: string): Promise<SerialConfig> => {
     ports: times(
       () => ({
         id: data.readU8(),
-        functions: unpackSerialPortFunctions(data.readU16()),
+        functions: unpackValues(data.readU16(), serialPortFunctionBits()),
         mspBaudRate: toBaudRate(data.readU8()),
         gpsBaudRate: toBaudRate(data.readU8()),
         telemetryBaudRate: toBaudRate(data.readU8()),
@@ -458,9 +447,8 @@ export const writeSerialConfig = async (
     config.ports.forEach((portSettings) => {
       buffer.push8(portSettings.id);
 
-      const functionMask = packSerialPortFunctions(portSettings.functions);
       buffer
-        .push32(functionMask)
+        .push32(packValues(portSettings.functions, serialPortFunctionBits()))
         .push8(BAUD_RATES.indexOf(portSettings.mspBaudRate))
         .push8(BAUD_RATES.indexOf(portSettings.gpsBaudRate))
         .push8(BAUD_RATES.indexOf(portSettings.telemetryBaudRate))
@@ -484,9 +472,8 @@ export const writeSerialConfig = async (
       config.ports.forEach((portSettings) => {
         buffer.push8(portSettings.id);
 
-        const functionMask = packSerialPortFunctions(portSettings.functions);
         buffer
-          .push16(functionMask)
+          .push16(packValues(portSettings.functions, serialPortFunctionBits()))
           .push8(BAUD_RATES.indexOf(portSettings.mspBaudRate))
           .push8(BAUD_RATES.indexOf(portSettings.gpsBaudRate))
           .push8(BAUD_RATES.indexOf(portSettings.telemetryBaudRate))
@@ -529,4 +516,297 @@ export const writeReboot = async (
   }
 
   return true;
+};
+
+export const readBoardAlignmentConfig = async (
+  port: string
+): Promise<Axes3D> => {
+  const data = await execute(port, { code: codes.MSP_BOARD_ALIGNMENT_CONFIG });
+  return {
+    roll: data.read16(),
+    pitch: data.read16(),
+    yaw: data.read16(),
+  };
+};
+
+export const writeBoardAlignmentConfig = async (
+  port: string,
+  { roll, pitch, yaw }: Axes3D
+): Promise<void> => {
+  await execute(port, {
+    code: codes.MSP_SET_BOARD_ALIGNMENT_CONFIG,
+    data: new WriteBuffer().push16(roll).push16(pitch).push16(yaw),
+  });
+};
+
+const reorderPwmProtocols = (
+  api: string,
+  currentProtocol: EscProtocols
+): EscProtocols => {
+  let result = currentProtocol;
+  if (semver.lt(api, "1.26.0")) {
+    switch (currentProtocol) {
+      case EscProtocols.DSHOT150:
+        result = EscProtocols.DSHOT600;
+
+        break;
+      case EscProtocols.DSHOT600:
+        result = EscProtocols.DSHOT150;
+
+        break;
+      default:
+        break;
+    }
+  } else if (
+    semver.gte(api, "1.43.0") &&
+    currentProtocol > EscProtocols.DSHOT1200
+  ) {
+    // for some reason, DSHOT1200 was removed in later
+    // verions of betaflight, and thus
+    // the protocol written to the board has
+    // to be reduced for anything after DSHOT1200
+    result -= 1;
+  }
+
+  return result;
+};
+
+export const readAdvancedPidConfig = async (
+  port: string
+): Promise<AdvancedPidConfig> => {
+  const api = apiVersion(port);
+  const data = await execute(port, { code: codes.MSP_ADVANCED_CONFIG });
+  const config = {
+    gyroSyncDenom: 0,
+    pidProcessDenom: 0,
+    useUnsyncedPwm: false,
+    fastPwmProtocol: 0,
+    gyroToUse: 0,
+    motorPwmRate: 0,
+    digitalIdlePercent: 0,
+    gyroUse32kHz: false,
+    motorPwmInversion: 0,
+    gyroHighFsr: 0,
+    gyroMovementCalibThreshold: 0,
+    gyroCalibDuration: 0,
+    gyroOffsetYaw: 0,
+    gyroCheckOverflow: 0,
+    debugMode: 0,
+    debugModeCount: 0,
+  };
+
+  config.gyroSyncDenom = data.readU8();
+  config.pidProcessDenom = data.readU8();
+  config.useUnsyncedPwm = data.readU8() !== 0;
+  config.fastPwmProtocol = reorderPwmProtocols(api, data.readU8());
+  config.motorPwmRate = data.readU16();
+  if (semver.gte(api, "1.24.0")) {
+    config.digitalIdlePercent = data.readU16() / 100;
+  }
+
+  if (semver.gte(api, "1.25.0")) {
+    const gyroUse32kHz = data.readU8();
+
+    if (semver.lt(api, "1.41.0")) {
+      config.gyroUse32kHz = gyroUse32kHz !== 0;
+    }
+  }
+
+  if (semver.gte(api, "1.42.0")) {
+    config.motorPwmInversion = data.readU8();
+    // gyroToUse (read by MSP_SENSOR_ALIGNMENT)
+    config.gyroToUse = data.readU8();
+    config.gyroHighFsr = data.readU8();
+    config.gyroMovementCalibThreshold = data.readU8();
+    config.gyroCalibDuration = data.readU16();
+    config.gyroOffsetYaw = data.readU16();
+    config.gyroCheckOverflow = data.readU8();
+    config.debugMode = data.readU8();
+    config.debugModeCount = data.readU8();
+  }
+
+  return config;
+};
+
+export const writeAdvancedPidConfig = async (
+  port: string,
+  config: AdvancedPidConfig
+): Promise<void> => {
+  const api = apiVersion(port);
+  const buffer = new WriteBuffer();
+  buffer
+    .push8(config.gyroSyncDenom)
+    .push8(config.pidProcessDenom)
+    .push8(config.useUnsyncedPwm ? 1 : 0)
+    .push8(reorderPwmProtocols(api, config.fastPwmProtocol))
+    .push16(config.motorPwmRate);
+  if (semver.gte(api, "1.24.0")) {
+    buffer.push16(config.digitalIdlePercent * 100);
+  }
+
+  if (semver.gte(api, "1.25.0")) {
+    let gyroUse32kHz = 0;
+    if (semver.lt(api, "1.41.0")) {
+      gyroUse32kHz = config.gyroUse32kHz ? 1 : 0;
+    }
+    buffer.push8(gyroUse32kHz);
+  }
+
+  if (semver.gte(api, "1.42.0")) {
+    buffer
+      .push8(config.motorPwmInversion)
+      .push8(config.gyroToUse)
+      .push8(config.gyroHighFsr)
+      .push8(config.gyroMovementCalibThreshold)
+      .push16(config.gyroCalibDuration)
+      .push16(config.gyroOffsetYaw)
+      .push8(config.gyroCheckOverflow)
+      .push8(config.debugMode);
+  }
+  await execute(port, { code: codes.MSP_SET_ADVANCED_CONFIG, data: buffer });
+};
+
+export const writePidProtocols = async (
+  port: string,
+  protocols: PartialNullable<PidProtocols>
+): Promise<void> => {
+  const config = await readAdvancedPidConfig(port);
+  const newConfig = {
+    ...config,
+    ...filterUnset(protocols),
+  };
+  await writeAdvancedPidConfig(port, newConfig);
+};
+
+export const readMixerConfig = async (port: string): Promise<MixerConfig> => {
+  const data = await execute(port, { code: codes.MSP_MIXER_CONFIG });
+  const api = apiVersion(port);
+  return {
+    mixer: data.readU8(),
+    reversedMotors: !!(semver.gte(api, "1.36.0") ? data.readU8() : 0),
+  };
+};
+
+export const writeMixerConfig = async (
+  port: string,
+  config: MixerConfig
+): Promise<void> => {
+  const buffer = new WriteBuffer();
+  const api = apiVersion(port);
+
+  buffer.push8(config.mixer);
+  if (semver.gte(api, "1.36.0")) {
+    buffer.push8(config.reversedMotors ? 1 : 0);
+  }
+  await execute(port, { code: codes.MSP_SET_MIXER_CONFIG, data: buffer });
+};
+
+export const writeMotorDirection = async (
+  port: string,
+  reversed: boolean
+): Promise<void> => {
+  const { mixer } = await readMixerConfig(port);
+  await writeMixerConfig(port, { mixer, reversedMotors: reversed });
+};
+
+export const writeDigitalIdleSpeed = async (
+  port: string,
+  idlePercentage: number
+): Promise<void> => {
+  const config = await readAdvancedPidConfig(port);
+  const newConfig = {
+    ...config,
+    digitalIdlePercent: idlePercentage,
+  };
+  await writeAdvancedPidConfig(port, newConfig);
+};
+
+const ALLOWED_DSHOT_CONDITIONS = [Beepers.RX_SET, Beepers.RX_LOST];
+
+export const readBeeperConfig = async (port: string): Promise<BeeperConfig> => {
+  const data = await execute(port, { code: codes.MSP_BEEPER_CONFIG });
+  const api = apiVersion(port);
+  const beeperSchema = beeperBits(api);
+  return {
+    // For some reason, the flag bits are actually inverted for both
+    // read and write
+    conditions: unpackValues(data.readU32(), beeperSchema, { inverted: true }),
+    dshot: {
+      tone: semver.gte(api, "1.37.0") ? data.readU8() : 0,
+      conditions: semver.gte(api, "1.39.0")
+        ? (unpackValues(data.readU32(), beeperSchema, {
+            inverted: true,
+          }).filter((beeper) => ALLOWED_DSHOT_CONDITIONS.includes(beeper)) as (
+            | Beepers.RX_SET
+            | Beepers.RX_LOST
+          )[])
+        : [],
+    },
+  };
+};
+
+export const writeBeeperConfig = async (
+  port: string,
+  config: BeeperConfig
+): Promise<void> => {
+  const api = apiVersion(port);
+  const beeperSchema = beeperBits(api);
+  const buffer = new WriteBuffer();
+
+  buffer.push32(
+    packValues(config.conditions, beeperSchema, {
+      inverted: true,
+    })
+  );
+
+  if (semver.gte(api, "1.37.0")) {
+    buffer.push8(config.dshot.tone);
+  }
+
+  if (semver.gte(api, "1.39.0")) {
+    buffer.push32(
+      packValues(
+        config.dshot.conditions.filter((con) =>
+          ALLOWED_DSHOT_CONDITIONS.includes(con)
+        ),
+        beeperSchema,
+        { inverted: true }
+      )
+    );
+  }
+
+  await execute(port, { code: codes.MSP_SET_BEEPER_CONFIG, data: buffer });
+};
+
+export const writeDshotBeeperConfig = async (
+  port: string,
+  dshotConfig: BeeperConfig["dshot"]
+): Promise<void> => {
+  const existing = await readBeeperConfig(port);
+  await writeBeeperConfig(port, { ...existing, dshot: dshotConfig });
+};
+
+export const readDisabledSensors = async (port: string): Promise<Sensors[]> => {
+  const data = await execute(port, { code: codes.MSP_SENSOR_CONFIG });
+  const schema = sensorBits();
+  const disabled: Sensors[] = [];
+  schema.forEach((sensor) => {
+    if (data.remaining() > 0 && data.read8() === 1) {
+      disabled.push(sensor);
+    }
+  });
+
+  return disabled;
+};
+
+export const writeDisabledSensors = async (
+  port: string,
+  disabledSensors: Sensors[]
+): Promise<void> => {
+  const schema = sensorBits().slice(0, 3);
+  const buffer = new WriteBuffer();
+  schema.forEach((sensor) => {
+    buffer.push8(disabledSensors.includes(sensor) ? 1 : 0);
+  });
+  await execute(port, { code: codes.MSP_SET_SENSOR_CONFIG, data: buffer });
 };

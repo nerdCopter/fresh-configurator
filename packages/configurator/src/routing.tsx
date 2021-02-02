@@ -1,7 +1,8 @@
 /* eslint-disable import/prefer-default-export */
 import React from "react";
 import { isElement } from "react-is";
-import { useSelectedTabQuery } from "./gql/queries/Configurator.graphql";
+import { useQuery } from "./gql/apollo";
+import { SelectedTabDocument } from "./gql/queries/Configurator.graphql";
 
 type TabElement = React.ReactElement<{ id: string }>;
 
@@ -12,15 +13,16 @@ type TabElement = React.ReactElement<{ id: string }>;
 export const TabRouter: React.FC<{ children: TabElement | TabElement[] }> = ({
   children,
 }) => {
-  const { data } = useSelectedTabQuery();
-  const selectedTab = data?.configurator.tab || undefined;
+  const { data } = useQuery(SelectedTabDocument);
+  const selectedTab = data?.configurator.tab ?? undefined;
 
   const visibleTab =
-    selectedTab &&
-    React.Children.map(children, (c) => c)
-      ?.filter(isElement)
-      .filter((c): c is TabElement => typeof c.props.id === "string")
-      .find((t) => t.props.id === selectedTab);
+    (selectedTab &&
+      React.Children.map(children, (c) => c)
+        .filter(isElement)
+        .filter((c): c is TabElement => typeof c.props.id === "string")
+        .find((t) => t.props.id === selectedTab)) ||
+    undefined;
 
-  return visibleTab || null;
+  return visibleTab ?? null;
 };

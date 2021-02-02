@@ -1,11 +1,12 @@
 import React, { useEffect } from "react";
 
-import { useNavigationDataQuery } from "../gql/queries/Configurator.graphql";
-import { useSelectTabMutation } from "../gql/mutations/Configurator.graphql";
+import { NavigationDataDocument } from "../gql/queries/Configurator.graphql";
+import { SelectTabDocument } from "../gql/mutations/Configurator.graphql";
 
 import NavLinks from "../components/NavLinks";
 import Icon from "../components/Icon";
 import useConnectionState from "../hooks/useConnectionState";
+import { useMutation, useQuery } from "../gql/apollo";
 
 const DISCONNECTED_LINKS = [
   {
@@ -32,6 +33,11 @@ const DISCONNECTED_LINKS = [
 ];
 
 const CONNECTED_LINKS = [
+  {
+    title: "General",
+    icon: <Icon name="setup" />,
+    id: "general",
+  },
   {
     title: "Setup",
     icon: <Icon name="setup" />,
@@ -228,11 +234,11 @@ const CONNECTED_LINKS = [
 //   </ul> */
 
 const NavigationManager: React.FC = () => {
-  const { data: navigationQuery, loading } = useNavigationDataQuery();
+  const { data: navigationQuery, loading } = useQuery(NavigationDataDocument);
   const selectedTab = navigationQuery?.configurator.tab ?? undefined;
 
   const { connected } = useConnectionState();
-  const [selectTab] = useSelectTabMutation();
+  const [selectTab] = useMutation(SelectTabDocument);
 
   const links = connected ? CONNECTED_LINKS : DISCONNECTED_LINKS;
 
@@ -242,7 +248,8 @@ const NavigationManager: React.FC = () => {
     if (!loading && !links.find((link) => link.id === selectedTab)) {
       selectTab({
         variables: {
-          tabId: links[0].id,
+          // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+          tabId: links[0]!.id,
         },
       });
     }

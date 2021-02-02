@@ -56,7 +56,7 @@ const handleMspInfoReply = async (port: string): Promise<void> => {
         reply(port, Buffer.from([36, 77, 62, 3, 1, 0, 1, 40, 43]));
       }
     } catch (e) {}
-    // wait 10 miliseconds
+    // Respond to an open request within 100ms
     await new Promise((resolve) => realSetTimeout(resolve, 10));
   }
 };
@@ -98,7 +98,7 @@ describe("open", () => {
   });
 
   it("should throw an error when trying to open a port which doesn't respond with api version", () =>
-    new Promise((done) => {
+    new Promise<void>((done) => {
       jest.useFakeTimers();
 
       open("/dev/non-msp-device")
@@ -111,12 +111,12 @@ describe("open", () => {
         });
 
       realSetTimeout(() => {
-        jest.runTimersToTime(2500);
+        jest.advanceTimersByTime(2500);
       }, 100);
     }));
 
   it("should provide a callback and close the connection when the connection closes", () => {
-    return new Promise((done) => {
+    return new Promise<void>((done) => {
       open("/dev/something", () => {
         expect(isOpen("/dev/something")).toBe(false);
         done();
@@ -125,7 +125,7 @@ describe("open", () => {
   });
 
   it("should close the connection when an error occurs", () =>
-    new Promise((done) => {
+    new Promise<void>((done) => {
       open("/dev/something", () => {
         expect(isOpen("/dev/something")).toBe(false);
         done();
@@ -135,7 +135,7 @@ describe("open", () => {
     }));
 
   it("should close the connection if the device disconnects", () =>
-    new Promise((done) => {
+    new Promise<void>((done) => {
       open("/dev/something", () => {
         expect(isOpen("/dev/something")).toBe(false);
         done();
@@ -204,6 +204,7 @@ describe("close", () => {
           })
       )
     );
+    await flushPromises();
 
     await close("/dev/something");
 
@@ -229,13 +230,12 @@ describe("execute", () => {
 
   it("should write the given command and data for v1 commands", async () => {
     await open("/dev/something");
-    jest.useFakeTimers();
 
-    execute("/dev/something", {
+    await execute("/dev/something", {
       code: 254,
       data: Buffer.from("This is a message"),
+      timeout: 0,
     }).catch(() => {});
-    await flushPromises();
 
     expect(writtenData("/dev/something")).toEqual(
       encodeMessageV1(254, Buffer.from("This is a message"))
@@ -244,13 +244,12 @@ describe("execute", () => {
 
   it("should write the given command and data for v2 commands", async () => {
     await open("/dev/something");
-    jest.useFakeTimers();
 
-    execute("/dev/something", {
+    await execute("/dev/something", {
       code: 256,
       data: Buffer.from("This is a v2 message"),
+      timeout: 0,
     }).catch(() => {});
-    await flushPromises();
 
     expect(writtenData("/dev/something")).toEqual(
       encodeMessageV2(256, Buffer.from("This is a v2 message"))
@@ -259,29 +258,30 @@ describe("execute", () => {
 
   it("should deduplicate requests, if the same request is already in flight", async () => {
     await open("/dev/something");
-    jest.useFakeTimers();
 
-    execute("/dev/something", {
-      code: 254,
-      data: Buffer.from("This is a message"),
-    }).catch(() => {});
+    await Promise.all([
+      execute("/dev/something", {
+        code: 254,
+        data: Buffer.from("This is a message"),
+        timeout: 0,
+      }).catch(() => {}),
+      execute("/dev/something", {
+        code: 254,
+        data: Buffer.from("This is a message"),
+        timeout: 0,
+      }).catch(() => {}),
+    ]);
 
-    await flushPromises();
-    execute("/dev/something", {
-      code: 254,
-      data: Buffer.from("This is a message"),
-    }).catch(() => {});
-
-    await flushPromises();
     expect(writtenData("/dev/something")).toEqual(
       encodeMessageV1(254, Buffer.from("This is a message"))
     );
 
-    execute("/dev/something", {
+    await execute("/dev/something", {
       code: 254,
       data: Buffer.from("This is a different request"),
+      timeout: 0,
     }).catch(() => {});
-    await flushPromises();
+
     expect(writtenData("/dev/something")).toEqual(
       Buffer.concat([
         encodeMessageV1(254, Buffer.from("This is a message")),
@@ -431,11 +431,10 @@ describe("bytesWritten", () => {
 
   it("should count the number of bytes written to the device", async () => {
     await open("/dev/something");
-    jest.useFakeTimers();
-
-    execute("/dev/something", {
+    await execute("/dev/something", {
       code: 54,
       data: Buffer.from("This is a v1 message"),
+      timeout: 0,
     }).catch(() => {});
 
     expect(bytesWritten("/dev/something")).toEqual(

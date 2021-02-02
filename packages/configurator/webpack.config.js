@@ -1,5 +1,4 @@
-/* eslint-disable global-require */
-module.exports = [
-  require("./webpack.main.config"),
-  require("./webpack.renderer.config"),
-];
+const mainConfig = require("./webpack/main.config");
+const rendererConfig = require("./webpack/renderer.config");
+
+module.exports = [rendererConfig, mainConfig];

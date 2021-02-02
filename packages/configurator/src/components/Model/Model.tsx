@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { Canvas } from "react-three-fiber";
-import { JSONLoader, Color, Geometry, Material } from "three";
+import { Color, Geometry, Material } from "three";
+import JSONLoader from "./JSONLoader";
 
 import quadx from "./models/quad_x.model";
 import tricopter from "./models/tricopter.model";
 import hexx from "./models/hex_x.model";
 
-type Model = {
+type ModelData = {
   geometry: Geometry;
   materials?: Material[] | undefined;
 };
@@ -18,7 +19,7 @@ const MODEL_MAP = {
 };
 
 export type ModelTypes = keyof typeof MODEL_MAP;
-const modelsCache = {} as Record<ModelTypes, Model | undefined>;
+const modelsCache = {} as Record<ModelTypes, ModelData | undefined>;
 
 /**
  * When running in storybook we still want
@@ -46,8 +47,8 @@ const fetchLocal = (url: string): Promise<Response> =>
 /**
  * Load the given model
  */
-const useModelData = (modelKey: ModelTypes): Model | undefined => {
-  const [data, setData] = useState<Model | undefined>(undefined);
+const useModelData = (modelKey: ModelTypes): ModelData | undefined => {
+  const [data, setData] = useState<ModelData | undefined>(undefined);
 
   useEffect(() => {
     if (modelsCache[modelKey]) {
@@ -75,7 +76,7 @@ type ModelProps = {
   attitude?: {
     roll: number;
     pitch: number;
-    heading: number;
+    yaw: number;
   };
   /**
    * Are the attitude values the raw
@@ -90,11 +91,11 @@ const whiteColor = new Color(1, 1, 1);
 /**
  * Create a 3D representation of the given model
  * and show what it will look like with the given
- * roll pitch and heading values
+ * roll pitch and yaw values
  */
 const Model: React.FC<ModelProps> = ({
   name,
-  attitude: { roll, pitch, heading } = { roll: 0, pitch: 0, heading: 0 },
+  attitude: { roll, pitch, yaw } = { roll: 0, pitch: 0, yaw: 0 },
   rawAttitude = false,
 }) => {
   const data = useModelData(name);
@@ -107,7 +108,7 @@ const Model: React.FC<ModelProps> = ({
   const { geometry, materials } = data;
 
   const x = pitch * -1.0 * (Math.PI / 180);
-  const y = (heading * -1.0 - 0) * (Math.PI / 180);
+  const y = (yaw * -1.0 - 0) * (Math.PI / 180);
   const z = roll * -1.0 * (Math.PI / 180);
 
   return (

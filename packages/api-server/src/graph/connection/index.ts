@@ -1,6 +1,6 @@
 import * as uuid from "uuid";
 import gql from "graphql-tag";
-import { ApolloError } from "apollo-server";
+import { ApolloError } from "apollo-server-express";
 import { mergeResolvers, mergeTypes } from "merge-graphql-schemas";
 import debug from "debug";
 import device from "./device";
@@ -61,7 +61,7 @@ const resolvers: Resolvers = {
       let connectionId = uuid.v4();
 
       const connect = async (retries = 1): Promise<void> => {
-        if (deviceId && !connections.getPort(connectionId)) {
+        if (deviceId && !connections.isOpen(connectionId)) {
           log("connection is now closed, ignoring reconnect");
           return;
         }
@@ -103,6 +103,7 @@ const resolvers: Resolvers = {
           // as we were not previously open
           // throw an error
           if (!deviceId) {
+            log(`Error opening ${port}`, e);
             throw e;
           }
 

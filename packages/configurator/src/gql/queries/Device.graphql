@@ -10,7 +10,7 @@ query Attitude($connection: ID!) {
       attitude {
         roll
         pitch
-        heading
+        yaw
       }
     }
   }
@@ -28,10 +28,22 @@ query Status($connection: ID!) {
   }
 }
 
-query Sensors($connection: ID!) {
+query AvailableSensors($connection: ID!) {
   connection(connectionId: $connection) {
     device {
-      sensors
+      sensors {
+        available
+      }
+    }
+  }
+}
+
+query DisabledSensors($connection: ID!) {
+  connection(connectionId: $connection) {
+    device {
+      sensors {
+        disabled
+      }
     }
   }
 }
@@ -122,6 +134,71 @@ query DevicePortSettings($connection: ID!) {
           gpsBaudRate
           mspBaudRate
           telemetryBaudRate
+        }
+      }
+    }
+  }
+}
+
+query DeviceBoardAlignment($connection: ID!) {
+  connection(connectionId: $connection) {
+    device {
+      alignment {
+        roll
+        pitch
+        yaw
+      }
+    }
+  }
+}
+
+query PidProtocolsAndProcessor($connection: ID!) {
+  connection(connectionId: $connection) {
+    device {
+      pid {
+        protocols {
+          gyroSyncDenom
+          pidProcessDenom
+          fastPwmProtocol
+          useUnsyncedPwm
+          motorPwmRate
+        }
+      }
+      info {
+        targetName
+        mcuTypeId
+      }
+    }
+  }
+}
+
+query MotorDirection($connection: ID!) {
+  connection(connectionId: $connection) {
+    device {
+      motors {
+        reversedDirection
+      }
+    }
+  }
+}
+
+query MotorDigitalIdleSpeed($connection: ID!) {
+  connection(connectionId: $connection) {
+    device {
+      motors {
+        digitalIdlePercent
+      }
+    }
+  }
+}
+
+query DshotBeeperConfig($connection: ID!) {
+  connection(connectionId: $connection) {
+    device {
+      beeper {
+        dshot {
+          conditions
+          tone
         }
       }
     }

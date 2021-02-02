@@ -17,3 +17,36 @@ mutation SetArming(
 mutation Reset($connection: ID!) {
   deviceReset(connectionId: $connection)
 }
+
+mutation SetBoardAlignment($connection: ID!, $alignment: AlignmentInput!) {
+  deviceSetBoardAlignment(connectionId: $connection, alignment: $alignment)
+}
+
+mutation SetPidProtocols($connection: ID!, $protocols: PidProtocolsInput!) {
+  deviceSetPidProtocols(connectionId: $connection, protocols: $protocols)
+}
+
+mutation SetMotorsDirection($connection: ID!, $reversed: Boolean!) {
+  deviceSetMotorsDirection(connectionId: $connection, reversed: $reversed)
+}
+
+mutation SetMotorDigitalIdleSpeed($connection: ID!, $idlePercentage: Float!) {
+  deviceSetDigitalIdleSpeed(
+    connectionId: $connection
+    idlePercentage: $idlePercentage
+  )
+}
+
+mutation SetDshotBeeperConfig(
+  $connection: ID!
+  $config: DshotBeeperConfigInput!
+) {
+  deviceSetDshotBeeperConfig(connectionId: $connection, config: $config)
+}
+
+mutation SetDisabledSensors($connection: ID!, $disabledSensors: [Int!]!) {
+  deviceSetDisabledSensors(
+    connectionId: $connection
+    disabledSensors: $disabledSensors
+  )
+}

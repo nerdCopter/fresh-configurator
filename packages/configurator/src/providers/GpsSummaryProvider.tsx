@@ -3,10 +3,11 @@ import { Sensors } from "@betaflight/api";
 import Status from "../components/Status";
 import Table from "../components/Table";
 import {
-  useSensorsQuery,
-  useGpsSummaryQuery,
+  GpsSummaryDocument,
+  AvailableSensorsDocument,
 } from "../gql/queries/Device.graphql";
 import useConnectionState from "../hooks/useConnectionState";
+import { useQuery } from "../gql/apollo";
 
 type Props = {
   refreshRate: number;
@@ -15,15 +16,15 @@ type Props = {
 const GpsSummaryProvider: React.FC<Props> = ({ refreshRate }) => {
   const { connection } = useConnectionState();
 
-  const { data: sensorsData } = useSensorsQuery({
+  const { data: sensorsData } = useQuery(AvailableSensorsDocument, {
     variables: {
       connection: connection ?? "",
     },
     skip: !connection,
   });
-  const sensors = sensorsData?.connection.device.sensors ?? [];
+  const sensors = sensorsData?.connection.device.sensors.available ?? [];
 
-  const { data } = useGpsSummaryQuery({
+  const { data } = useQuery(GpsSummaryDocument, {
     variables: {
       connection: connection ?? "",
     },

@@ -1,14 +1,12 @@
-import { ApolloClient } from "apollo-client";
-import gql from "graphql-tag";
-import { InMemoryCache } from "apollo-cache-inmemory";
-import { WebSocketLink } from "apollo-link-ws";
-import { SubscriptionClient } from "subscriptions-transport-ws";
+import { InMemoryCache, ApolloClient, gql } from "@apollo/client";
+import WebSocketLink from "./WebSocketLink";
 import { Resolvers, Configurator } from "./__generated__";
+import introspection from "./__generated__/introspection.json";
 import { versionInfo } from "../util";
 import {
-  LogsQueryResult,
-  LogsQuery,
   LogsDocument,
+  SelectedTabDocument,
+  ConnectionSettingsDocument,
 } from "./queries/Configurator.graphql";
 
 const typeDefs = gql`
@@ -41,107 +39,158 @@ const typeDefs = gql`
   }
 `;
 
-const cache = new InMemoryCache();
+export const cache = (): InMemoryCache =>
+  new InMemoryCache({
+    typePolicies: Object.fromEntries(
+      // eslint-disable-next-line no-underscore-dangle
+      introspection.__schema.types
+        .filter(({ kind }) => kind === "OBJECT")
+        .map(({ name }) => [name, { merge: true }])
+    ),
+  });
 
-const resolvers: Resolvers = {
-  Mutation: {
-    setTab: (_, { tabId }, { client }) => {
-      client.writeData({
-        data: {
-          __typename: "Query",
-          configurator: {
-            __typename: "Configurator",
-            tab: tabId,
-          } as Configurator,
-        },
-      });
-      return null;
+export const resolvers = (initialState?: {
+  connecting?: boolean;
+  connection?: string | null;
+  port?: string;
+  baudRate?: number;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+}): any => {
+  const config: Resolvers = {
+    Query: {
+      configurator: () => ({
+        __typename: "Configurator",
+
+        port: "",
+        baudRate: 115200,
+        connecting: false,
+        connection: null,
+        expertMode: false,
+        logs: [],
+        ...initialState,
+      }),
     },
-    setConnectionSettings: (_, { port, baudRate }, { client }) => {
-      const data: { port: string; baudRate?: number } = {
-        port,
-      };
+    Mutation: {
+      setTab: (_, { tabId }, { client }) => {
+        client.writeQuery({
+          query: SelectedTabDocument,
+          data: {
+            __typename: "Query",
+            configurator: {
+              __typename: "Configurator",
+              tab: tabId,
+            },
+          },
+        });
+        return null;
+      },
+      setConnectionSettings: (_, { port, baudRate }, { client }) => {
+        const existingData = {
+          // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+          ...client.readQuery({
+            query: ConnectionSettingsDocument,
+          })!.configurator,
+        };
 
-      if (typeof baudRate === "number") {
-        data.baudRate = baudRate;
-      }
+        if (typeof baudRate === "number") {
+          existingData.baudRate = baudRate;
+        }
+        existingData.port = port;
 
-      client.writeData({
-        data: {
-          __typename: "Query",
-          configurator: {
-            __typename: "Configurator",
-            ...data,
-          } as Configurator,
-        },
-      });
+        client.writeQuery({
+          query: ConnectionSettingsDocument,
+          data: {
+            __typename: "Query",
+            configurator: {
+              ...existingData,
+            },
+          },
+        });
 
-      return null;
-    },
-    setConnecting: (_, { value }, { client }) => {
-      client.writeData({
-        data: {
-          __typename: "Query",
-          configurator: {
-            __typename: "Configurator",
-            connecting: value,
-          } as Configurator,
-        },
-      });
+        return null;
+      },
+      setConnecting: (_, { value }, { client }) => {
+        client.writeQuery({
+          query: gql`
+            query {
+              configurator {
+                connecting
+              }
+            }
+          `,
+          data: {
+            __typename: "Query",
+            configurator: {
+              __typename: "Configurator",
+              connecting: value,
+            },
+          },
+        });
 
-      return null;
-    },
-    setConnection: (_, { connection }, { client }) => {
-      client.writeData({
-        data: {
-          __typename: "Query",
-          configurator: {
-            __typename: "Configurator",
-            connection,
-          } as Configurator,
-        },
-      });
+        return null;
+      },
+      setConnection: (_, { connection }, { client }) => {
+        client.writeQuery({
+          query: gql`
+            query {
+              configurator {
+                connection
+              }
+            }
+          `,
+          data: {
+            __typename: "Query",
+            configurator: {
+              __typename: "Configurator",
+              connection,
+            },
+          },
+        });
 
-      return null;
-    },
-    setExpertMode: (_, { enabled }, { client }) => {
-      client.writeData({
-        data: {
-          __typename: "Query",
-          configurator: {
-            __typename: "Configurator",
-            expertMode: enabled,
-          } as Configurator,
-        },
-      });
+        return null;
+      },
+      // setExpertMode: (_, { enabled }, { client }) => {
+      //   client.writeQuery({
+      //     document: Ex,
+      //     data: {
+      //       __typename: "Query",
+      //       configurator: {
+      //         __typename: "Configurator",
+      //         expertMode: enabled,
+      //       } as Configurator,
+      //     },
+      //   });
 
-      return null;
-    },
-    log: (_, { message }, { client }) => {
-      const logs =
-        client.readQuery<LogsQuery, LogsQueryResult>({
+      //   return null;
+      // },
+      log: (_, { message }, { client }) => {
+        const logs =
+          client.readQuery({
+            query: LogsDocument,
+          })?.configurator.logs ?? [];
+
+        client.writeQuery({
           query: LogsDocument,
-        })?.configurator.logs ?? [];
+          data: {
+            __typename: "Query",
+            configurator: {
+              __typename: "Configurator",
+              logs: logs.concat([
+                {
+                  time: new Date().toISOString(),
+                  message,
+                  __typename: "Log" as const,
+                },
+              ]),
+            },
+          },
+        });
 
-      client.writeData({
-        data: {
-          __typename: "Query",
-          configurator: {
-            __typename: "Configurator",
-            logs: logs.concat([
-              {
-                time: new Date().toISOString(),
-                message,
-                __typename: "Log" as const,
-              },
-            ]),
-          } as Configurator,
-        },
-      });
-
-      return null;
+        return null;
+      },
     },
-  },
+  };
+  return config;
 };
 
 // extract the backend address from the URL search query, as this can
@@ -149,22 +198,35 @@ const resolvers: Resolvers = {
 const searchParams = new URLSearchParams(window.location.search.slice(1));
 const BACKEND = searchParams.get("backend") ?? "ws://localhost:9000";
 
-const subscriptionClient = new SubscriptionClient(`${BACKEND}/graphql`, {
-  reconnect: true,
-});
-
 const client = new ApolloClient({
-  cache,
+  cache: cache(),
   typeDefs,
-  // generated resolvers are not compatible with apollo
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  resolvers: resolvers as any,
-  link: new WebSocketLink(subscriptionClient),
+  resolvers: resolvers(),
+  link: new WebSocketLink({
+    url: `${BACKEND}/graphql`,
+    keepAlive: 99999999999,
+  }),
 });
 
 const writeInitial = (): void => {
   const { os, version, chromeVersion } = versionInfo();
-  client.writeData({
+  client.writeQuery({
+    query: gql`
+      query {
+        configurator {
+          port
+          baudRate
+          tab
+          expertMode
+          connecting
+          connection
+          logs {
+            time
+            message
+          }
+        }
+      }
+    `,
     data: {
       __typename: "Query",
       configurator: {

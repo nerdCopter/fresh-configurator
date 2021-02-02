@@ -1,7 +1,6 @@
 import semver from "semver";
-import { times, reduce } from "rambda";
 import { WriteBuffer, apiVersion, execute } from "@betaflight/msp";
-import { bitCheck } from "../utils";
+import { bitCheck, times } from "../utils";
 import {
   osdFields,
   OSD_VIDEO_VALUE_TO_TYPE,
@@ -33,9 +32,11 @@ import {
   OSDDisplayItem,
   OSDTimer,
   Position,
+  OSDPrecisionTypes,
 } from "./types";
+import * as OSDTypes from "./types";
 
-export * as OSDTypes from "./types";
+export { OSDTypes };
 
 const isVisible = (positionData: number, profile: number): boolean =>
   positionData !== -1 && (positionData & (OSD_VALUE_VISIBLE << profile)) !== 0;
@@ -62,7 +63,8 @@ const inWriteOrder = <K, T extends { key: K }>(
 ): T[] =>
   sortOrder.map(
     (orderedKey, i) =>
-      values.find(({ key }) => key === orderedKey) ?? subsitutions[i]
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      values.find(({ key }) => key === orderedKey) ?? subsitutions[i]!
   );
 
 export const readOSDConfig = async (port: string): Promise<OSDConfig> => {
@@ -76,11 +78,11 @@ export const readOSDConfig = async (port: string): Promise<OSDConfig> => {
   const flag0Active = bitCheck(flagsData, 0);
 
   const videoSystem = hasOSD
-    ? OSD_VIDEO_VALUE_TO_TYPE[data.readU8()]
+    ? OSD_VIDEO_VALUE_TO_TYPE[data.readU8()] ?? OSDVideoTypes.AUTO
     : OSDVideoTypes.AUTO;
   const unitMode =
     hasOSD && semver.gte(api, "1.21.0") && flag0Active
-      ? OSD_UNIT_VALUE_TO_TYPE[data.readU8()]
+      ? OSD_UNIT_VALUE_TO_TYPE[data.readU8()] ?? OSDUnitTypes.IMPERIAL
       : OSDUnitTypes.IMPERIAL;
 
   const alarms =
@@ -146,7 +148,9 @@ export const readOSDConfig = async (port: string): Promise<OSDConfig> => {
         return {
           key: i,
           src: timerSources[timerData & 0x0f] ?? OSDTimerSources.UNKNOWN,
-          precision: OSD_PRECISION_VALUE_TO_TYPE[(timerData >> 4) & 0x0f],
+          precision:
+            OSD_PRECISION_VALUE_TO_TYPE[(timerData >> 4) & 0x0f] ??
+            OSDPrecisionTypes.SECOND,
           time: (timerData >> 8) & 0xff,
         };
       }, timersCount)
@@ -228,15 +232,14 @@ export const writeOSDDisplayItem = async (
   }
 
   const packedPosition = semver.gte(api, "1.21.0")
-    ? reduce(
+    ? visibility.reduce(
         (packedVisible, visibilityProfile, i) =>
           packedVisible | (visibilityProfile ? OSD_VALUE_VISIBLE << i : 0),
-        0,
-        visibility
+        0
       ) |
       ((position.y & 0x001f) << 5) |
       position.x
-    : packLegacyPosition(position, visibility[0]);
+    : packLegacyPosition(position, visibility[0] ?? false);
 
   data.push8(index);
   data.push16(packedPosition);
@@ -267,21 +270,20 @@ const writeOSDOtherData = async (
     data.push8(unitMode);
 
     // watch out, order matters! match the firmware
-    data.push8(alarms[0].value);
-    data.push16(alarms[1].value);
+    data.push8(alarms[0]?.value ?? 0);
+    data.push16(alarms[1]?.value ?? 0);
     if (semver.lt(api, "1.36.0")) {
-      data.push16(alarms[2].value);
+      data.push16(alarms[2]?.value ?? 0);
     } else {
       // This value is unused by the firmware with configurable timers
       data.push16(0);
     }
 
-    data.push16(alarms[3].value);
+    data.push16(alarms[3]?.value ?? 0);
     if (semver.gte(api, "1.37.0")) {
-      const warningFlags = reduce(
+      const warningFlags = warnings.reduce(
         (acc, warning, i) => (warning.enabled ? acc | (1 << i) : acc),
-        0,
-        warnings
+        0
       );
 
       data.push16(warningFlags);
